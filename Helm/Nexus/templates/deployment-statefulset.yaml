@@ -1,0 +1,113 @@
+{{- if .Values.statefulset.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+{{- else }}
+apiVersion: apps/v1
+kind: Deployment
+{{- end }}
+metadata:
+  name: {{ template "nexus.fullname" . }}
+  {{- if .Values.namespace.enabled }}
+  namespace: {{ .Values.namespace.name }}
+  {{- else }}
+  namespace: default
+  {{- end }}
+  labels:
+{{ include "nexus.labels" . | indent 4 }}
+{{- if .Values.nexus.labels }}
+{{ toYaml .Values.nexus.labels | indent 4 }}
+{{- end }}
+  annotations:
+    iam.amazonaws.com/role: arn:aws:iam::{{ .Values.eks.aws_account }}:role/{{ .Values.eks.roleName }}
+    {{- range $key, $value := .Values.ingress.annotations }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  {{- if .Values.statefulset.enabled }}
+  serviceName: {{ .Values.service.name }}
+  {{- end }}
+  {{- if .Values.deploymentStrategy }}
+  strategy:
+{{ toYaml .Values.deploymentStrategy | indent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: {{ template "nexus.name" . }}
+  template:
+    metadata:
+      annotations:
+        iam.amazonaws.com/role: arn:aws:iam::{{ .Values.eks.aws_account }}:role/{{ .Values.eks.roleName }}
+        {{- range $key, $value := .Values.ingress.annotations }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
+      labels:
+        app: {{ template "nexus.name" . }}
+    spec:
+      {{- if .Values.deployment.initContainers }}
+      initContainers:
+{{ toYaml .Values.deployment.initContainers | indent 6 }}
+      {{- end }}
+      containers:
+        - name: nexus
+          image: {{ .Values.nexus.imageName }}:{{ .Values.nexus.imageTag }}
+          {{- if .Values.deployment.postStart.command }}
+          lifecycle:
+            postStart:
+              exec:
+                command: {{ .Values.deployment.postStart.command }}
+          {{- end }}
+          env:
+{{ toYaml .Values.nexus.env | indent 12 }}
+          resources:
+{{ toYaml .Values.nexus.resources | indent 12 }}
+          ports:
+            - containerPort: {{ .Values.nexus.nexusPort }}
+            - containerPort: {{ .Values.nexus.dockerPort }}
+          volumeMounts:
+            - mountPath: {{ .Values.volume.mountPath }}
+              name: {{ .Values.volume.mountName }}
+      {{- if .Values.nexus.securityContext }}
+      securityContext:
+{{ toYaml .Values.nexus.securityContext | indent 8 }}
+      {{- end }}
+      volumes:
+        - name: {{ .Values.volume.mountName }}
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.volume.mountName }}
+          {{- end }}
+
+## create pvc in case of statefulsets
+  {{- if .Values.statefulset.enabled }}
+  volumeClaimTemplates:
+    {{- if .Values.persistence.enabled }}
+    - metadata:
+        name: {{ .Values.volume.mountName }}
+        {{- if .Values.namespace.enabled }}
+        namespace: {{ .Values.namespace.name }}
+        {{- else }}
+        namespace: default
+        {{- end }}
+        labels:
+{{ include "nexus.labels" . | indent 10 }}
+        annotations:
+          iam.amazonaws.com/role: arn:aws:iam::{{ .Values.eks.aws_account }}:role/{{ .Values.eks.roleName }}
+          {{- range $key, $value := .Values.ingress.annotations }}
+          {{ $key }}: {{ $value | quote }}
+          {{- end }}
+      spec:
+        accessModes:
+          - {{ .Values.persistence.accessMode | quote }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.storageSize | quote }}
+        {{- if .Values.persistence.storageClass }}
+        {{- if (eq "-" .Values.persistence.storageClass) }}
+        storageClassName: ""
+        {{- else }}
+        storageClassName: "{{ .Values.persistence.storageClass }}"
+        {{- end }}
+        {{- end }}
+    {{- end }}
+  {{- end }}

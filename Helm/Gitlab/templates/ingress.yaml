@@ -1,0 +1,46 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: {{ .Values.appName }}
+  {{- if .Values.namespace.enabled }}
+  namespace: {{ .Values.namespace.name }}
+  {{- else }}
+  namespace: default
+  {{- end }}
+  labels:
+    app: {{ .Values.appName }}
+  annotations: 
+    {{- range $key, $value := .Values.ingress.annotations }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+spec:
+  rules:
+  {{- range .Values.ingress.hosts }}
+  - host: {{ .name }}
+    http:
+      paths:
+        - path: {{ default "/" .path }}
+          backend:
+            serviceName: gitlab
+            servicePort: 80
+  {{- end }}
+  {{- range .Values.ingress.hosts }}
+  {{- if .tls }}  
+  tls:
+  {{- end }}
+  {{- end }}
+  {{- range .Values.ingress.hosts }}
+  {{- if .tls }}
+  - hosts:
+  {{- if .tlsHosts }}
+  {{- range $host := .tlsHosts }}
+    - {{ $host }}
+  {{- end }}
+  {{- else }}
+    - {{ .name }}
+  {{- end }}
+    # secretName: {{ .tlsSecret }}
+  {{- end }}
+  {{- end }}
+{{- end }}

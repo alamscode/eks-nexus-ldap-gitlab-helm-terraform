@@ -1,0 +1,80 @@
+{{- if .Values.statefulset.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+{{- else }}
+apiVersion: apps/v1
+kind: Deployment
+{{- end }}
+metadata:
+  name: {{ .Values.appName }}
+  {{- if .Values.namespace.enabled }}
+  namespace: {{ .Values.namespace.name }}
+  {{- else }}
+  namespace: default
+  {{- end }}
+  annotations:
+    iam.amazonaws.com/role: arn:aws:iam::{{ .Values.eks.aws_account }}:role/{{ .Values.eks.roleName }}
+    {{- range $key, $value := .Values.ingress.annotations }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+  labels:
+    app: {{ .Values.appName }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Values.appName }}
+  replicas: {{ .Values.replicas }}
+  serviceName: {{ .Values.appName }}
+  template:
+    metadata:
+      annotations:
+        iam.amazonaws.com/role: arn:aws:iam::{{ .Values.eks.aws_account }}:role/{{ .Values.eks.roleName }}
+        {{- range $key, $value := .Values.ingress.annotations }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
+      labels:
+        app: {{ .Values.appName }}
+      
+    spec:
+      
+      {{- if .Values.initDeployment.initContainers }}
+      initContainers:
+{{ toYaml .Values.initDeployment.initContainers | indent 6 }}
+      {{- end }}    
+
+      {{- if .Values.containerDeployment.Containers }}
+      containers:
+{{ toYaml .Values.containerDeployment.Containers | indent 6 }}
+      {{- end }} 
+      volumes:
+      - name: {{ .Values.mountName }}
+        persistentVolumeClaim:
+          claimName: {{ .Values.mountName }}
+
+  volumeClaimTemplates:
+    - metadata:
+        name: {{ .Values.mountName }}
+        {{- if .Values.namespace.enabled }}
+        namespace: {{ .Values.namespace.name }}
+        {{- else }}
+        namespace: default
+        {{- end }}
+        labels:
+          app: {{ .Values.appName }}
+        annotations:
+          iam.amazonaws.com/role: arn:aws:iam::{{ .Values.eks.aws_account }}:role/{{ .Values.eks.roleName }}
+          {{- range $key, $value := .Values.ingress.annotations }}
+          {{ $key }}: {{ $value | quote }}
+          {{- end }}
+      spec:
+        accessModes:
+          - "ReadWriteOnce"
+        resources:
+          requests:
+            storage: {{ .Values.storageClass.storage | quote }}
+        {{- if .Values.storageClass.enabled }}
+        storageClassName: {{ .Values.storageClass.storageClassName }}
+        {{- else }}
+        storageClassName: gp2
+        {{- end }}
+

@@ -1,0 +1,119 @@
+kind: StatefulSet
+
+appName: gitlab
+
+namespace: 
+  enabled: true
+  name: gitlab
+
+serviceType: ClusterIP
+
+initDeployment:
+  initContainers:
+    - args:
+      - s3
+      - sync
+      - s3://<name-of-s3-bucket> # insert the name of the s3 bucket from which you need to get the backup data
+      - /gitlab-data/s3BackupGit
+      image: # insert the link of the container registery where you have pushed the awsCli image
+      name: restore-container
+      ports:
+      - containerPort: 80
+      resources:
+        limits:
+          cpu: 1000m
+          memory: 4Gi
+        requests:
+          cpu: 500m
+          memory: 2Gi
+      volumeMounts:
+      - mountPath: /gitlab-data
+        name: gitlab-data
+
+containerDeployment:
+  Containers:
+  - name: gitlab
+    image: store/gitlab/gitlab-ce:11.10.4-ce.0
+    ports:
+    - containerPort: 80
+    lifecycle:
+      postStart:
+        exec:
+          command: ["bin/bash", "-c", " sleep 60;  cd /var/opt/gitlab/backups; cp /gitlab-data/s3BackupGit/*.tar . ;  chown git:git /var/opt/gitlab/backups/* ; gitlab-rake gitlab:backup:restore force=yes ; mv /gitlab-data/s3BackupGit/gitlab.rb /etc/gitlab/gitlab.rb; gitlab-ctl reconfigure ;"]
+    volumeMounts:
+    - mountPath: /gitlab-data
+      name: gitlab-data
+  volumes:
+    - name: gitlab-data
+      persistentVolumeClaim:
+        claimName: gitlab-data
+
+mountPath: /gitlab-data
+mountName: gitlab-data
+
+statefulset:
+  enabled: true
+
+replicas: 1
+
+storageClass:
+  enabled: true
+  storage: 15Gi
+  storageClassName: storageclass-gitlab
+  storageType: gp2
+
+eks:
+
+  aws_account: "<aws-account-number>" # the account no. of the AWS account on which the cluster has been deployed
+  roleName: terraform-<insert-environment-name-here>-eks-container-role-gitlab # The role will be created with the environment name appended to it. Insert the environment name here
+
+
+
+ingress:
+  ## Set to true to enable ingress record generation
+  enabled: true
+
+  ## Set this to true in order to add the corresponding annotations for cert-manager
+  certManager: false
+
+  ## Ingress annotations done as key:value pairs
+  ## For a full list of possible ingress annotations, please see
+  ## ref: https://github.com/kubernetes/ingress-nginx/blob/master/docs/annotations.md
+  ##
+  ## If tls is set to true, annotation ingress.kubernetes.io/secure-backends: "true" will automatically be set
+  ## If certManager is set to true, annotation kubernetes.io/tls-acme: "true" will automatically be set
+  annotations:
+   kubernetes.io/ingress.class: nginx
+
+  ## The list of hostnames to be covered with this ingress record.
+  ## Most likely this will be just one host, but in the event more hosts are needed, this is an array
+  hosts:
+  - name: ## Insert the name of the host here if ingress is set to 'true'
+    path: /
+
+    ## Set this to true in order to enable TLS on the ingress record
+    tls: false
+
+    ## Optionally specify the TLS hosts for the ingress record
+    ## Useful when the Ingress controller supports www-redirection
+    ## If not specified, the above host name will be used
+    tlsHosts:
+    # - gitlab-dr.guidespark.net
+    # - suitecrm.local
+
+    ## If TLS is set to true, you must declare what secret will store the key/certificate for TLS
+    # tlsSecret: nexus.local-tls
+
+  secrets:
+  ## If you're providing your own certificates, please use this to add the certificates as secrets
+  ## key and certificate should start with -----BEGIN CERTIFICATE----- or
+  ## -----BEGIN RSA PRIVATE KEY-----
+  ##
+  ## name should line up with a tlsSecret set further up
+  ## If you're using cert-manager, this is unneeded, as it will create the secret for you if it is not set
+  ##
+  ## It is also possible to create and manage the certificates outside of this helm chart
+  ## Please see README.md for more information
+  # - name: suitecrm.local-tls
+  #   key:
+  #   certificate:
